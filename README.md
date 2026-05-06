@@ -1,65 +1,76 @@
 # game-qa
 
-A Claude Code plugin for verifying browser-based game features at three layers — **unit**, **programmatic in-game**, **visual in-game** — framed as **player journeys, not assert-equals**.
+A Claude Code plugin that catches the bugs your unit tests can't see — the "felt slow", "click did nothing", "HUD never updated" kind that only show up when a real player drives the game.
 
-Built on the discipline that **a feature that passes mechanically but feels broken to a player is a fail.**
+## What This Does
 
-## What's in the bundle
+**game-qa** turns Claude into a real QA process for your browser-based game. When you ask Claude to verify a feature, it doesn't just check the code — it spins up the running game, drives it as a player would, captures screenshots, and only tells you "done" when every flow actually feels right.
 
-| Artifact | What it does |
-|---|---|
-| `/game-qa:bootstrap-game-qa-system` | One-shot setup. Run once per project. Builds the debug-system foundation (server-authoritative action registry, `window.debug` proxy, `getState`/`screenshot` primitives, structured `[debug-event]` log, user-facing cheat menu). |
-| `verifying-browser-games` *(skill)* | Orchestrator strategy. The agent reads this when verifying a feature. Three layers, parallel-by-domain dispatch, player-flow reporting, only-surface-when-green discipline. |
-| `enumerating-game-test-cases` *(skill)* | Test-case authoring subagent. Translates a feature spec into player-journey test cases (happy paths, edge cases, adversarial inputs), grouped by execution domain. |
-| `running-game-qa-pass` *(skill)* | Execution subagent. Drives the browser as a player would for one domain, returns a verdict, persists screenshots and `verdict.json` to the artifact directory. |
+Built on a single rule: **a case that passes mechanically but feels broken to a player is a fail.**
 
-## Lifecycle for a feature
+### Key Features
 
-```
-[setup, once per project]
-  /game-qa:bootstrap-game-qa-system
-  (the agent gap-fills your debug system to satisfy the plugin's contract)
+- **Three-layer verification** — Unit tests, in-game state, and visual/UX. Not one. All three.
+- **Parallel QA agents** — Multiple subagents verify different domains of a feature at once; the orchestrator only surfaces when everything is green.
+- **Player-perspective reporting** — Results come back in player-flow language ("player respawns within 30s and can move"), not `expect(x).toBe(y)`.
+- **Persistent QA sheet** — Every run writes screenshots and verdicts to `qa-runs/` so you can review and reproduce flows manually.
+- **Cheat menu included** — The same debug actions the agent uses are exposed to you behind `~` or `Ctrl+Shift+D`, so you can validate any flow manually in one click.
+- **Tool-agnostic browser driver** — Uses Playwright MCP today, but the contract is open — Chrome DevTools MCP or any future MCP works the same way.
 
-[per feature]
-  verifying-browser-games dispatches:
-    enumerating-game-test-cases       → test-cases.json
-    running-game-qa-pass × N domains  → verdict.json + screenshots (parallel)
-  → orchestrator aggregates verdicts  → manifest.json + summary.md
-  → on failure: orchestrator fixes and re-dispatches (cap: 2 cycles)
-  → on green: surfaces to the user with player-flow language + cheat-menu instructions
+## Installation
 
-The user only hears about the feature when it's truly green.
-```
-
-Persistent artifacts land in `qa-runs/<timestamp>_<feature>/` so you can review the QA sheet and reproduce flows manually via the cheat menu.
-
-## Install
-
-```
+```bash
 /plugin marketplace add Bulugulu/game-qa
 /plugin install game-qa@game-qa
 ```
 
-After install, the bootstrap command and three skills become available. The skill descriptions trigger automatically when you ask Claude to verify, QA, or test a game feature.
+Then, once per project, set up the debug-system foundation:
 
-## Why this exists
+```
+/game-qa:bootstrap-game-qa-system
+```
 
-Game QA isn't code QA. A passing unit test for `respawnDuration(t)` doesn't prove the player respawns correctly. A working `debug.killBoss()` doesn't prove the kill button is wired. A nice screenshot doesn't prove the underlying state is correct. None of those tell you whether the player would *feel* the feature works.
+Claude reads the prompt and gap-fills your project's debug system to satisfy the framework's contract — action registry, `window.debug` proxy, `getState`/`screenshot` primitives, structured event log, and the user-facing cheat menu.
 
-This plugin enforces all three layers, plus the player-perspective rule: every test case is a player journey, every observation is a player observation, every report is in player-flow language.
+## Usage
 
-## Requirements
+### Verify a feature before you merge
 
-- The bootstrap command (artifact A) assumes a browser-based game with a server (any transport — Colyseus, WS, REST). It adapts to whatever's there.
-- A browser-driving tool the QA subagents can use. Today: Playwright MCP. The skill is contract-based, not tool-locked — Chrome DevTools MCP, a successor MCP, or any future tool meeting the contract works (open URL, scrape console, real clicks/typing, screenshots).
+```
+> "QA the combat respawn before I merge"
+```
+
+Claude pulls in `verifying-browser-games`, dispatches a test-case author (player journeys + edge cases + adversarial inputs), then dispatches one execution subagent per domain in parallel. They drive the game as players, capture screenshots, write `verdict.json`. The orchestrator aggregates, fixes any failures, and surfaces only when everything is green.
+
+### Validate a flow yourself
+
+Hit `~` or `Ctrl+Shift+D` to open the cheat menu. Every action the agent has access to shows up as a button. Click "Kill Self" to test respawn, click "Set HP=1" to test low-health UX, click "Force Dawn" to skip the night cycle.
+
+### Check the QA sheet
+
+After every run, look in `qa-runs/<timestamp>_<feature>/`:
+
+- `summary.md` — what was verified, in player-flow language
+- `manifest.json` — pass/fail per domain
+- `domains/<name>/screenshots/` — visual evidence
+- `domains/<name>/verdict.json` — per-case observations
+
+## What's in the bundle
+
+| | |
+|---|---|
+| `/game-qa:bootstrap-game-qa-system` | One-shot setup. Adds the debug-system foundation to your project. Run once. |
+| `verifying-browser-games` | The orchestrator skill. Strategy, dispatch, reporting. Auto-triggers when you ask Claude to verify or QA. |
+| `enumerating-game-test-cases` | Test-case authoring subagent. Translates a feature into player journeys + edges. |
+| `running-game-qa-pass` | Execution subagent. Drives the browser for one domain, returns a verdict. |
 
 ## Status
 
-`v0.1.0` — pre-validation. Designed against a real game project (a three.js multiplayer survival-MOBA jam entry) and the debug-system contract is implemented and shipping there. The skills haven't survived wide-cycle real-world use yet. Expect rough edges; PRs welcome.
+**v0.1.0 — pre-validation.** Designed against a real three.js multiplayer game; the debug-system foundation is implemented and shipping there. The skills haven't survived wide-cycle real-world use yet. Expect rough edges; PRs welcome.
 
 ## Manual install
 
-If you'd rather copy directly without the plugin system:
+If you'd rather copy directly:
 
 ```bash
 git clone https://github.com/Bulugulu/game-qa.git
