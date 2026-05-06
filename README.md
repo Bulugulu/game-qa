@@ -8,6 +8,12 @@ Agents are great at writing code. They're bad at verifying games — and verific
 
 This plugin makes Claude operate like a real QA lead for browser-based games. The key shift from typical code QA: we verify real player flows from the player's perspective, we verify visually, and we give the agent the tools to actually do the verification. Game verification is context-heavy, so we also split the work across subagents.
 
+## Why browser games specifically
+
+Browser-based games (three.js, canvas, WebGL, DOM) are uniquely well-suited to fully agent-authored development. There's no game engine UI to click through, no proprietary editor, no asset pipeline. Claude can write the whole game in code — runtime, rendering, gameplay, networking — and you can stay out of the loop.
+
+That makes the missing piece *verification*. If the agent can write the game but can't prove a feature works the way a player would experience it, you can't actually let it ship. This plugin closes the loop: the agent codes the feature, the agent verifies the feature, and only then does it tell you "done."
+
 ## What you get
 
 ### A QA lead's mindset
@@ -46,6 +52,36 @@ The same actions the agent uses are exposed to you behind a key combo. If the ag
 
 *Why it matters:* the agent's verification is only useful if you can independently reproduce it. One click.
 
+## What a run looks like
+
+You ask:
+
+> "QA the combat respawn before I merge"
+
+The orchestrator runs internally — you don't see any of this:
+
+1. Dispatches the test-case author → returns 9 cases across 2 domains (respawn-flow, hud-feedback)
+2. Dispatches 2 execution subagents in parallel — one per domain
+3. Domain 1 passes. Domain 2 fails — the respawn timer never appears on screen
+4. Reads the failure observation, fixes the HUD wiring, re-dispatches domain 2
+5. Domain 2 passes. Aggregates verdicts. Writes the QA sheet to `qa-runs/`
+
+You see (only at the end):
+
+> Combat respawn verified across 4 player flows + 7 edge cases. All green.
+>
+> **Player flows validated:**
+> - Player dies at match start, respawns within 30s, can move and attack
+> - Player killed by a turret takes the same flow as PvP death
+> - HUD respawn countdown visible from death to revive
+> - Player who dies near enemy spawn respawns at base
+>
+> QA sheet: `qa-runs/2026-05-05T22-30_combat-respawn/summary.md`
+>
+> To validate manually: hit `~`, click "Kill Self", watch the flow.
+
+If you want to drill in, ask *"show me the screenshots for hud-feedback"* and the orchestrator pulls them from the QA sheet.
+
 ## Installation
 
 ```bash
@@ -61,15 +97,14 @@ Then, once per project:
 
 Claude adds the agentic QA interface to your project, adapting to whatever stack you already have. No new dependencies.
 
-## Usage
+## Browse the skills
 
-Ask Claude to verify a feature:
+The plugin is plain Markdown — read each skill directly:
 
-```
-> "QA the combat respawn before I merge"
-```
-
-The plugin takes over. You'll only hear back when every flow is green.
+- [`verifying-browser-games`](./plugins/game-qa/skills/verifying-browser-games/SKILL.md) — the QA lead's playbook (orchestrator)
+- [`enumerating-game-test-cases`](./plugins/game-qa/skills/enumerating-game-test-cases/SKILL.md) — how a subagent translates a feature into player-journey test cases
+- [`running-game-qa-pass`](./plugins/game-qa/skills/running-game-qa-pass/SKILL.md) — how a subagent drives the browser to verify one domain
+- [`bootstrap-game-qa-system`](./plugins/game-qa/commands/bootstrap-game-qa-system.md) — the one-shot prompt that sets up the agentic QA interface
 
 ## Status
 
