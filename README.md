@@ -14,59 +14,52 @@ Browser-based games (three.js, canvas, WebGL, DOM) are uniquely well-suited to f
 
 That makes the missing piece *verification*. If the agent can write the game but can't prove a feature works the way a player would experience it, you can't actually let it ship. This plugin closes the loop: the agent codes the feature, the agent verifies the feature, and only then does it tell you "done."
 
-## What you get
+## How it works — two pieces
 
-### A QA lead's mindset
+game-qa has two parts that come together. They're separate concerns and worth understanding separately.
 
-A skill that tells the agent how a real QA process works: enumerate the player journeys for a feature, walk every journey to its edge cases, dispatch subagents to drive the game, report back in **player language — not assert language**. Surface a feature as "done" only when every flow is truly green.
+### 1. The skills
 
-*Why it matters:* without this, agents claim "tests pass" once unit tests go green. That's the false-completion bug, and it's the #1 reason you can't trust an agent to ship game features autonomously.
+A skill family that teaches Claude how to verify games like a real QA lead. **These trigger automatically.** When the agent is working in a game repo and the plugin is installed, it recognizes that game QA applies — you don't have to prompt it.
 
-### An agentic QA interface
+- **A QA lead's mindset.** Enumerate player journeys, walk every journey to its edge cases, dispatch subagents, report in player language — not assert language. *Without this, agents claim "tests pass" once unit tests go green. That's the false-completion bug.*
+- **Visual validation.** The agent sees the game the way the player would. When visual targets exist (mockups, design specs, prior screenshots), the agent compares against them. *A unit test can't see the screen. A function-checker can't notice a button looks pressable but isn't wired to anything.*
+- **Subagent split.** Test authoring and per-domain execution dispatched to subagents in parallel. *One mega-agent doing end-to-end QA gets stuck or runs out of context, and you lose every observation it made.*
+- **A persistent QA sheet.** Every run writes screenshots, per-case verdicts, and a human-readable summary to `qa-runs/`. *"Trust me, I tested it" doesn't scale. A real QA process leaves a paper trail.*
+- **Only-when-green reporting.** The agent runs dispatch → fix → re-dispatch internally and surfaces only when every flow passes. *You should see "done" once, not 12 messages of dispatch noise.*
 
-A foundation the agent uses to programmatically trigger any game state — set HP to 1, kill a player, force dawn, spawn a boss, end a match — so it can jump straight to the moment it wants to test.
+### 2. The agentic QA interface
 
-*Why it matters:* without it, the agent has to play through the game to reach the state under test. Slow, brittle, and burns context on irrelevant gameplay. With it, every test is one call to set up the moment, then verify.
+A foundation the agent builds into *your game* so it can actually drive the verification. The skills above need real tools to do their job — a way to trigger states, capture screenshots, emit structured events. The plugin's bootstrap command tells Claude how to add this interface to your project.
 
-### Visual validation
+You run it once per project:
 
-The skills require the agent to use visual validation tools — see the game the way the player would — to confirm elements are rendered, positioned correctly, and interactable. When visual targets exist (mockups, design specs, prior screenshots), the agent compares against them.
+```
+/game-qa:bootstrap-game-qa-system
+```
 
-*Why it matters:* a unit test can't see the screen. A function-checker can't notice that a button looks pressable but isn't wired to anything. Visual validation is how you catch the gap between "the code is correct" and "the player can actually use the feature."
+Claude adapts the interface to whatever stack you already have. No new dependencies. What you end up with:
 
-### Subagent split
+- **Programmatic state triggers.** Set HP to 1, kill a player, force dawn, spawn a boss, end a match — one call to set up any moment under test. *Without this, the agent has to play through the game to reach the state. Slow, brittle, burns context on irrelevant gameplay.*
+- **Visual capture.** A `debug.screenshot()` primitive that pauses animation and time-of-day for clean, deterministic captures. *A visual diff against an animated frame is noise. Pause first.*
+- **Structured event log.** Every debug action emits a stable `[debug-event]` line. *The agent's browser-driving tool greps for these instead of parsing arbitrary logs.*
+- **A cheat menu for you.** The same actions the agent uses, exposed behind a key combo (`~` or `Ctrl+Shift+D`). Click "Kill Self" and reproduce what the agent claimed. *The agent's verification is only useful if you can independently reproduce it.*
 
-Test authoring and per-domain execution are dispatched to subagents in parallel, keeping the orchestrator focused on strategy and reporting.
-
-*Why it matters:* one big agent doing end-to-end QA gets stuck or runs out of context, and you lose every observation it made. Smaller, parallel, replaceable.
-
-### A persistent QA sheet
-
-Every run lands in `qa-runs/<timestamp>_<feature>/` — screenshots, per-case verdicts, a human-readable summary.
-
-*Why it matters:* "trust me, I tested it" doesn't scale. A real QA process leaves a paper trail you can review and reproduce.
-
-### A cheat menu for you
-
-The same actions the agent uses are exposed to you behind a key combo. If the agent says "I verified the respawn flow," you hit `~`, click "Kill Self," and see for yourself.
-
-*Why it matters:* the agent's verification is only useful if you can independently reproduce it. One click.
+**Without piece 2, the skills are an instruction manual for tools that don't exist. Without piece 1, the interface is just a debug system. Together, the agent can verify features autonomously.**
 
 ## What a run looks like
 
-You ask:
+The ideal flow is invisible. You're working on combat respawn with Claude. It finishes implementing the feature. Without you prompting, it recognizes that the QA skills apply (it's a game repo, the skills are installed) and runs the verification process itself.
 
-> "QA the combat respawn before I merge"
+You don't see:
 
-The orchestrator runs internally — you don't see any of this:
+- The test-case author returning 9 cases across 2 domains
+- 2 execution subagents running in parallel
+- Domain 2 failing — the respawn timer never appears on screen
+- Claude reading the failure, fixing the HUD wiring, re-dispatching
+- Verdicts aggregating, manifest and summary written to `qa-runs/`
 
-1. Dispatches the test-case author → returns 9 cases across 2 domains (respawn-flow, hud-feedback)
-2. Dispatches 2 execution subagents in parallel — one per domain
-3. Domain 1 passes. Domain 2 fails — the respawn timer never appears on screen
-4. Reads the failure observation, fixes the HUD wiring, re-dispatches domain 2
-5. Domain 2 passes. Aggregates verdicts. Writes the QA sheet to `qa-runs/`
-
-You see (only at the end):
+You see one message:
 
 > Combat respawn verified across 4 player flows + 7 edge cases. All green.
 >
@@ -80,7 +73,7 @@ You see (only at the end):
 >
 > To validate manually: hit `~`, click "Kill Self", watch the flow.
 
-If you want to drill in, ask *"show me the screenshots for hud-feedback"* and the orchestrator pulls them from the QA sheet.
+You can also prompt explicitly — *"QA the combat respawn before I merge"* — but the whole point is you don't have to.
 
 ## Installation
 
@@ -94,8 +87,6 @@ Then, once per project:
 ```
 /game-qa:bootstrap-game-qa-system
 ```
-
-Claude adds the agentic QA interface to your project, adapting to whatever stack you already have. No new dependencies.
 
 ## Browse the skills
 
