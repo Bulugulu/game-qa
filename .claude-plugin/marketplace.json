@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "game-qa",
+  "description": "Browser-game QA: three-layer verification (unit / programmatic / visual) framed as player journeys.",
+  "owner": {
+    "name": "Bulugulu",
+    "url": "https://github.com/Bulugulu"
+  },
+  "plugins": [
+    {
+      "name": "game-qa",
+      "description": "Three-skill QA framework + one-shot debug-system bootstrap. Player-perspective verification for browser games (three.js, canvas, WebGL, DOM).",
+      "source": "./plugins/game-qa",
+      "category": "testing",
+      "tags": ["game", "qa", "testing", "browser", "three.js", "verification", "playwright"]
+    }
+  ]
+}

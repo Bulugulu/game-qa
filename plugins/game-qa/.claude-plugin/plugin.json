@@ -1,0 +1,13 @@
+{
+  "name": "game-qa",
+  "version": "0.1.0",
+  "description": "Verify browser-based game features at three layers (unit / programmatic / visual) framed as player journeys. Bundles three skills and a one-shot debug-system bootstrap command.",
+  "author": {
+    "name": "Aviv Sheriff",
+    "url": "https://github.com/Bulugulu"
+  },
+  "homepage": "https://github.com/Bulugulu/game-qa",
+  "repository": "https://github.com/Bulugulu/game-qa",
+  "license": "MIT",
+  "keywords": ["game", "qa", "testing", "browser", "three.js", "playwright", "verification", "subagent"]
+}
