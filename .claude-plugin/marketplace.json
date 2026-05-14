@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "game-qa",
-  "description": "Browser-game QA: three-layer verification (unit / programmatic / visual) framed as player journeys.",
+  "description": "Browser-game QA as a PM-driven loop — feature owner → enumerator → QA Lead → engineers + reviewers in parallel — framed as player journeys.",
   "owner": {
     "name": "Bulugulu",
     "url": "https://github.com/Bulugulu"
@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "game-qa",
-      "description": "Three-skill QA framework + one-shot debug-system bootstrap. Player-perspective verification for browser games (three.js, canvas, WebGL, DOM).",
+      "description": "Six-skill PM-driven QA loop for browser games (three.js, canvas, WebGL, DOM). Ships a project-agnostic runner + adapter skeleton + journey schema. Feature owner → QA Lead → engineers + reviewers in parallel → one verdict.",
       "source": "./plugins/game-qa",
       "category": "testing",
       "tags": ["game", "qa", "testing", "browser", "three.js", "verification", "playwright"]

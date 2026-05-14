@@ -1,7 +1,7 @@
 {
   "name": "game-qa",
-  "version": "0.1.0",
-  "description": "Verify browser-based game features at three layers (unit / programmatic / visual) framed as player journeys. Bundles three skills and a one-shot debug-system bootstrap command.",
+  "version": "0.2.0",
+  "description": "Verify browser-based game features through a PM-driven QA loop. Ships a project-agnostic runner + adapter skeleton + journey schema so projects onboard by copy-and-adapt, not natural-language reconstruction. Six skills covering request → plan → execute → review → rollup, plus the bootstrap that drops the framework into a new project.",
   "author": {
     "name": "Aviv Sheriff",
     "url": "https://github.com/Bulugulu"

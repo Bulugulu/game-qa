@@ -6,7 +6,7 @@
 
 Agents are great at writing code. They're bad at verifying games — and verification is the bottleneck for autonomous agentic coding. If you can't trust what your agent says is "done," you can't actually let it ship.
 
-This plugin makes Claude operate like a real QA lead for browser-based games. The key shift from typical code QA: we verify real player flows from the player's perspective, we verify visually, and we give the agent the tools to actually do the verification. Game verification is context-heavy, so we also split the work across subagents.
+This plugin makes Claude operate like a real QA team for browser-based games. The key shift from typical code QA: we verify real player flows from the player's perspective, we verify visually, and we give the agent the tools to actually do the verification. Game verification is context-heavy, so we split the work across subagents in a PM-driven loop and stream findings live.
 
 ## Why browser games specifically
 
@@ -18,62 +18,73 @@ That makes the missing piece *verification*. If the agent can write the game but
 
 game-qa has two parts that come together. They're separate concerns and worth understanding separately.
 
-### 1. The skills
+### 1. The skills — a PM-driven QA loop
 
-A skill family that teaches Claude how to verify games like a real QA lead. **These trigger automatically.** When the agent is working in a game repo and the plugin is installed, it recognizes that game QA applies — you don't have to prompt it.
+A skill family that teaches Claude how to verify games like a real QA team. **These trigger automatically.** When the agent finishes a feature in a game repo, it recognizes that game QA applies — you don't have to prompt it.
 
-- **A QA lead's mindset.** Enumerate player journeys, walk every journey to its edge cases, dispatch subagents, report in player language — not assert language. *Without this, agents claim "tests pass" once unit tests go green. That's the false-completion bug.*
-- **Visual validation.** The agent sees the game the way the player would. When visual targets exist (mockups, design specs, prior screenshots), the agent compares against them. *A unit test can't see the screen. A function-checker can't notice a button looks pressable but isn't wired to anything.*
-- **Subagent split.** Test authoring and per-domain execution dispatched to subagents in parallel. *One mega-agent doing end-to-end QA gets stuck or runs out of context, and you lose every observation it made.*
-- **A persistent QA sheet.** Every run writes screenshots, per-case verdicts, and a human-readable summary to `qa-runs/`. *"Trust me, I tested it" doesn't scale. A real QA process leaves a paper trail.*
-- **Only-when-green reporting.** The agent runs dispatch → fix → re-dispatch internally and surfaces only when every flow passes. *You should see "done" once, not 12 messages of dispatch noise.*
+The loop has five roles, each a separate skill, all spawned as subagents so observation-heavy work stays out of your main context:
+
+- **Feature owner** (`requesting-game-qa`) — the agent that built the feature, now wearing a PM hat. Writes a brief, signs off the test plan, watches tickets stream in, fixes as findings land.
+- **Enumerator** (`enumerating-game-test-cases`) — translates the brief into player-journey test cases. One happy path per player promise, walked to its edges, grouped by execution domain so journeys can run in parallel. Declares per case: input mode, review mode, evidence requirements, arrangement primitives needed.
+- **QA Lead** (`game-qa`) — validates adapter coverage *first* (gaps surface before engineers waste time), plans journeys, dispatches engineers and reviewers in parallel, rolls up a single verdict.
+- **QA Engineer** (`running-game-qa-pass`) — authors a journey YAML, runs it via the project's runner, returns evidence-bundle pointers. Captures; never judges.
+- **QA Reviewer** (`reviewing-game-qa`) — owns the cases, judges each from the evidence, files tickets immediately so the feature owner can fix in parallel.
+
+The whole loop in one paragraph: *Engineer signals ready → brief → plan signed off → Lead validates adapter coverage → engineers + reviewers run in parallel → tickets stream live to the feature owner who fixes as they land → one verdict comes back.*
+
+Why it's structured this way:
+
+- **A QA lead's mindset.** Enumerate player journeys, walk every journey to its edge cases, report in player language — not assert language. *Without this, agents claim "tests pass" once unit tests go green. That's the false-completion bug.*
+- **Visual validation.** The agent sees the game the way the player would. When visual targets exist (mockups, design specs, prior screenshots), the agent compares against them. *A unit test can't see the screen.*
+- **Role separation, parallelism by default.** Authoring, execution, and review are separate subagents — engineers and reviewers run in parallel. *One mega-agent doing end-to-end QA gets stuck or runs out of context, and you lose every observation it made.*
+- **Streaming tickets.** Findings file immediately to `tickets/`, not batched at the end. *The feature owner fixes capability-gaps first (they block QA), then bugs at their own pace — no waiting on a final report to start fixing.*
+- **A persistent QA sheet.** Every run writes a journey YAML, screenshots, per-case review JSONs, and a human-readable summary to `qa-runs/`. *"Trust me, I tested it" doesn't scale.*
+- **Only-when-green reporting.** The feature owner runs dispatch → fix → re-dispatch internally and surfaces only when every flow passes. *You should see "done" once, not 12 messages of dispatch noise.*
 
 ### 2. The agentic QA interface
 
-A foundation the agent builds into *your game* so it can actually drive the verification. The skills above need real tools to do their job — a way to trigger states, capture screenshots, emit structured events. The plugin's bootstrap command tells Claude how to add this interface to your project.
+A foundation the agent builds into *your game* so the QA loop can actually drive the verification. The skills above need real tools to do their job — a way to arrange state, capture evidence, observe events. **The plugin ships the framework as templates:** a project-agnostic runner you copy verbatim, an adapter skeleton you fill in against your project's `window.debug.*`, and a journey-schema doc that pins down the YAML contract. The bootstrap skill walks the agent through copying and adapting — not reconstruction from natural language.
 
-You run it once per project:
+You run it once per project (just ask Claude — the `bootstrap-game-qa-system` skill auto-triggers):
 
-```
-/game-qa:bootstrap-game-qa-system
-```
+> Bootstrap the game-qa system for this project.
 
 Claude adapts the interface to whatever stack you already have. No new dependencies. What you end up with:
 
-- **Programmatic state triggers.** Set HP to 1, kill a player, force dawn, spawn a boss, end a match — one call to set up any moment under test. *Without this, the agent has to play through the game to reach the state. Slow, brittle, burns context on irrelevant gameplay.*
-- **Visual capture.** A `debug.screenshot()` primitive that pauses animation and time-of-day for clean, deterministic captures. *A visual diff against an animated frame is noise. Pause first.*
-- **Structured event log.** Every debug action emits a stable `[debug-event]` line. *The agent's browser-driving tool greps for these instead of parsing arbitrary logs.*
-- **A cheat menu for you.** The same actions the agent uses, exposed behind a key combo (`~` or `Ctrl+Shift+D`). Click "Kill Self" and reproduce what the agent claimed. *The agent's verification is only useful if you can independently reproduce it.*
+- **Arrange primitives** (`arrange.*`). One call to set up any moment under test — your project's state-setup actions wrapped behind a stable namespace. *Without this, the agent has to play through the game to reach the state. Slow, brittle, burns context on irrelevant gameplay.*
+- **Probe primitives** (`probe.*`). Named state queries — small wrappers around your project's read-only debug actions. Reviewers check returned shapes against expected values. *Reading global state ad-hoc is fragile; named probes make the contract explicit.*
+- **Event accumulator** (`events.subscribe` / `events.drain`). Subscribe to a channel before the action; drain after. *Captures evidence the screenshot can't.*
+- **A project-agnostic journey runner** at `qa/runner.ts`. Reads journey YAML, drives Playwright as a library, emits an evidence bundle. *Engineers author data, not code — the runner is the runtime contract.*
+- **Arrange-vs-shortcut taxonomy.** Allowed: setup verbs (`set*`, `spawn*`, `give*`, `grant*`, `clear*`). Forbidden: any `debug.*` whose name describes what the *current case* is verifying. *The discipline that prevents synthetic shortcuts — a primitive that bypasses the chain being verified isn't a test, it's a lie.*
+- **A cheat menu for you.** The same actions the agent uses, exposed behind a key combo (`~` or `Ctrl+Shift+D`). Click any cheat-menu action to reproduce what the agent claimed. *The agent's verification is only useful if you can independently reproduce it.*
 
 **Without piece 2, the skills are an instruction manual for tools that don't exist. Without piece 1, the interface is just a debug system. Together, the agent can verify features autonomously.**
 
 ## What a run looks like
 
-The ideal flow is invisible. You're working on combat respawn with Claude. It finishes implementing the feature. Without you prompting, it recognizes that the QA skills apply (it's a game repo, the skills are installed) and runs the verification process itself.
+The ideal flow is invisible. You finish a feature with Claude. Without you prompting, it recognizes that the QA skills apply (it's a game repo, the skills are installed) and runs the verification process itself.
 
 You don't see:
 
-- The test-case author returning 9 cases across 2 domains
-- 2 execution subagents running in parallel
-- Domain 2 failing — the respawn timer never appears on screen
-- Claude reading the failure, fixing the HUD wiring, re-dispatching
-- Verdicts aggregating, manifest and summary written to `qa-runs/`
+- The feature owner writing a brief and spawning the enumerator
+- The enumerator returning N player-journey cases across M execution domains, each declaring input mode, review mode, evidence requirements
+- The feature owner signing off the plan
+- The QA Lead validating adapter coverage and dispatching engineers + reviewers in parallel
+- Reviewers filing tickets live as findings emerge — capability gaps first, then bugs
+- The feature owner fixing as tickets land, re-dispatching affected slices
+- Per-case reviews aggregating, summary written to `qa-runs/`
 
 You see one message:
 
-> Combat respawn verified across 4 player flows + 7 edge cases. All green.
+> Feature verified across N player flows + M edge cases. All green.
 >
-> **Player flows validated:**
-> - Player dies at match start, respawns within 30s, can move and attack
-> - Player killed by a turret takes the same flow as PvP death
-> - HUD respawn countdown visible from death to revive
-> - Player who dies near enemy spawn respawns at base
+> **Player flows validated:** (a short bulleted list, in player language — what the player would feel, not what an assertion would check)
 >
-> QA sheet: `qa-runs/2026-05-05T22-30_combat-respawn/summary.md`
+> QA sheet: `qa-runs/<date>_<feature>/summary.md`
 >
-> To validate manually: hit `~`, click "Kill Self", watch the flow.
+> To validate manually: hit `~`, trigger the relevant cheat-menu action, watch the flow.
 
-You can also prompt explicitly — *"QA the combat respawn before I merge"* — but the whole point is you don't have to.
+You can also prompt explicitly — *"QA this before I merge"* — but the whole point is you don't have to.
 
 ## Installation
 
@@ -82,24 +93,26 @@ You can also prompt explicitly — *"QA the combat respawn before I merge"* — 
 /plugin install game-qa@game-qa
 ```
 
-Then, once per project:
+Then, once per project, ask Claude:
 
-```
-/game-qa:bootstrap-game-qa-system
-```
+> Bootstrap the game-qa system for this project.
+
+The `bootstrap-game-qa-system` skill handles the rest.
 
 ## Browse the skills
 
 The plugin is plain Markdown — read each skill directly:
 
-- [`verifying-browser-games`](./plugins/game-qa/skills/verifying-browser-games/SKILL.md) — the QA lead's playbook (orchestrator)
-- [`enumerating-game-test-cases`](./plugins/game-qa/skills/enumerating-game-test-cases/SKILL.md) — how a subagent translates a feature into player-journey test cases
-- [`running-game-qa-pass`](./plugins/game-qa/skills/running-game-qa-pass/SKILL.md) — how a subagent drives the browser to verify one domain
-- [`bootstrap-game-qa-system`](./plugins/game-qa/commands/bootstrap-game-qa-system.md) — the one-shot prompt that sets up the agentic QA interface
+- [`requesting-game-qa`](./plugins/game-qa/skills/requesting-game-qa/SKILL.md) — feature owner's entry. Compile a brief, drive test-plan sign-off, watch tickets, fix as they land.
+- [`enumerating-game-test-cases`](./plugins/game-qa/skills/enumerating-game-test-cases/SKILL.md) — author the test plan: player journeys per execution domain, with input mode, review mode, and evidence requirements declared per case.
+- [`game-qa`](./plugins/game-qa/skills/game-qa/SKILL.md) — QA Lead orchestrator. Validates adapter coverage, dispatches engineers and reviewers in parallel, rolls up a single verdict.
+- [`running-game-qa-pass`](./plugins/game-qa/skills/running-game-qa-pass/SKILL.md) — QA engineer: author a journey YAML, run it, return evidence pointers. Never judges.
+- [`reviewing-game-qa`](./plugins/game-qa/skills/reviewing-game-qa/SKILL.md) — QA reviewer: own the cases, judge each from the evidence, file tickets immediately.
+- [`bootstrap-game-qa-system`](./plugins/game-qa/skills/bootstrap-game-qa-system/SKILL.md) — copy-and-adapt onboarding. Ships a project-agnostic [runner template](./plugins/game-qa/skills/bootstrap-game-qa-system/references/runner.ts), an [adapter skeleton](./plugins/game-qa/skills/bootstrap-game-qa-system/references/qa-adapter.template.ts), and a [journey schema](./plugins/game-qa/skills/bootstrap-game-qa-system/references/journey-schema.md). The agent copies the runner verbatim, fills in the adapter against your `window.debug.*`, and smoke-tests the rig.
 
 ## Status
 
-**v0.1.0 — pre-validation.** Designed against a real three.js multiplayer game. The skills haven't survived wide-cycle real-world use yet. Expect rough edges; PRs welcome.
+**v0.1.1 — pre-validation.** Designed against and exercised on a real three.js multiplayer game. The framework is engine- and architecture-agnostic by design (single-player, multiplayer, any browser game) but hasn't been stress-tested outside that origin context. Expect rough edges; PRs welcome.
 
 ## License
 
